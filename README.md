@@ -51,3 +51,4 @@ npx hardhat run scripts/deploy.js
 + `YieldManager`: Deployed to manage interactions with DeFi services like Aave. It handles token deposits into the lending pool and yield redemption processes.
 # New
 # New
+# New
