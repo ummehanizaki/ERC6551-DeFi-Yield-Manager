@@ -49,6 +49,3 @@ npx hardhat run scripts/deploy.js
 + `ERC6551AccountFactory`: Deployed to handle the creation of ERC-6551 compliant accounts. This contract contains the bytecode and logic required for TBA creation.
 + `ERC6551Registry`: Utilizes an existing deployment of the ERC6551Registry to save on deployment costs. This address remains constant and is used in deploying the YieldManager.
 + `YieldManager`: Deployed to manage interactions with DeFi services like Aave. It handles token deposits into the lending pool and yield redemption processes.
-# New
-# New
-# New
