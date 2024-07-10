@@ -12,23 +12,24 @@ contract YieldManager is AccessControl {
     ERC6551Registry public immutable registry;
     address public immutable implementationAddress;
     IAavePool public immutable aavePool;
-    address public immutable wethTokenAddress;
-    address public immutable aWETHTokenAddress;
+    address public immutable wethAddress;
+    address public immutable aWethAddress;
 
-    // Mapping from NFT contract and token ID to the address of the owner
-    mapping(address => mapping(uint256 => address)) public nftOwner;
+    // Mapping from NFT contract address and token ID to the owner's address
+    mapping(address => mapping(uint256 => address)) public nftOwners;
 
     event TBAInitialized(
         address indexed user,
-        address nftContract,
-        uint256 tokenId,
-        uint256 amount,
-        address tbaAddress
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        uint256 depositAmount,
+        address tba
     );
+
     event YieldRedeemed(
         address indexed user,
-        address nftContract,
-        uint256 tokenId,
+        address indexed nftContract,
+        uint256 indexed tokenId,
         uint256 amount
     );
 
@@ -36,56 +37,56 @@ contract YieldManager is AccessControl {
         address _registry,
         address _implementationAddress,
         address _aavePoolAddress,
-        address _wethTokenAddress,
-        address _aWETHTokenAddress
+        address _wethAddress,
+        address _aWethAddress
     ) {
         registry = ERC6551Registry(_registry);
         implementationAddress = _implementationAddress;
         aavePool = IAavePool(_aavePoolAddress);
-        wethTokenAddress = _wethTokenAddress;
-        aWETHTokenAddress = _aWETHTokenAddress;
+        wethAddress = _wethAddress;
+        aWethAddress = _aWethAddress;
     }
 
     /**
-     * @notice Deposits ERC-20 tokens and initializes a Token Bound Account (TBA) for a given NFT.
+     * @notice Deposits ERC-20 tokens (WETH) and initializes a Token Bound Account (TBA) for a given NFT.
      * @param nftContract The address of the NFT contract
      * @param tokenId The ID of the NFT token
      * @param salt A unique salt value for creating the TBA
-     * @param amount The amount of ERC-20 tokens to deposit
-     * @return tbaAddress The address of the newly created TBA
+     * @param depositAmount The amount of WETH to deposit
+     * @return tba The address of the newly created TBA
      */
-    function depositAndInitializeTBA(
+    function deposit(
         address nftContract,
         uint256 tokenId,
         bytes32 salt,
-        uint256 amount
-    ) external returns (address tbaAddress) {
-        tbaAddress = _createTBA(nftContract, tokenId, salt);
-        IERC20(wethTokenAddress).transferFrom(msg.sender, tbaAddress, amount);
-        _supplyToAavePool(tbaAddress, amount);
-        nftOwner[nftContract][tokenId] = msg.sender;
+        uint256 depositAmount
+    ) external returns (address tba) {
+        tba = _createTBA(nftContract, tokenId, salt);
+        IERC20(wethAddress).transferFrom(msg.sender, tba, depositAmount);
+        _supplyToAavePool(tba, depositAmount);
+        nftOwners[nftContract][tokenId] = msg.sender;
 
         emit TBAInitialized(
             msg.sender,
             nftContract,
             tokenId,
-            amount,
-            tbaAddress
+            depositAmount,
+            tba
         );
     }
 
     /**
-     * @notice Gets the address of the Token Bound Account (TBA) for a specific NFT.
+     * @notice Retrieves the address of the TBA for a specific NFT.
      * @param nftContract The address of the NFT token contract
      * @param tokenId The ID of the NFT token
      * @param salt A unique salt value for creating the TBA
-     * @return tbaAddress The address of the TBA
+     * @return tba The address of the TBA
      */
-    function getTBAAddress(
+    function getTBA(
         address nftContract,
         uint256 tokenId,
         bytes32 salt
-    ) public view returns (address tbaAddress) {
+    ) public view returns (address tba) {
         return
             registry.account(
                 implementationAddress,
@@ -100,7 +101,7 @@ contract YieldManager is AccessControl {
      * @notice Redeems a specified amount of aWETH from the TBA and withdraws WETH to the caller.
      * @param nftContract The address of the NFT token contract
      * @param tokenId The ID of the NFT token
-     * @param salt A unique salt value for the TBA
+     * @param salt A unique salt value for creating the TBA
      * @param amount The amount of aWETH to redeem
      */
     function redeemYield(
@@ -110,24 +111,27 @@ contract YieldManager is AccessControl {
         uint256 amount
     ) external {
         require(
-            nftOwner[nftContract][tokenId] == msg.sender,
+            nftOwners[nftContract][tokenId] == msg.sender,
             "Unauthorized: Caller is not the owner"
         );
-        address tbaAddress = getTBAAddress(nftContract, tokenId, salt);
-        uint256 aWETHBalance = IERC20(aWETHTokenAddress).balanceOf(tbaAddress);
 
-        _executeCall(
-            tbaAddress,
+        address tba = getTBA(nftContract, tokenId, salt);
+        uint256 aWETHBalance = IERC20(aWethAddress).balanceOf(tba);
+
+        ERC6551Account(payable(tba)).executeCall(
             address(aavePool),
+            0,
             abi.encodeWithSignature(
                 "withdraw(address,uint256,address)",
-                wethTokenAddress,
+                wethAddress,
                 aWETHBalance,
                 msg.sender
             )
         );
+
         IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);
-        nftOwner[nftContract][tokenId] == address(0);
+        delete nftOwners[nftContract][tokenId];
+
         emit YieldRedeemed(msg.sender, nftContract, tokenId, amount);
     }
 
@@ -136,53 +140,34 @@ contract YieldManager is AccessControl {
      * @param nftContract The address of the NFT token contract
      * @param tokenId The ID of the NFT token
      * @param salt A unique salt value for creating the TBA
-     * @return tbaAddress The address of the newly created TBA
+     * @return tba The address of the newly created TBA
      */
     function _createTBA(
         address nftContract,
         uint256 tokenId,
         bytes32 salt
-    ) internal returns (address) {
+    ) internal returns (address tba) {
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
 
-        return
-            registry.createAccount(
-                implementationAddress,
-                salt,
-                block.chainid,
-                nftContract,
-                tokenId
-            );
-    }
-
-    /**
-     * @notice Supplies WETH to the Aave WETH lending pool
-     * @param tbaAddress The TBA of the user
-     * @param contractAddress The contract address to interact with
-     * @param data The function data
-     */
-    function _executeCall(
-        address tbaAddress,
-        address contractAddress,
-        bytes memory data
-    ) internal {
-        ERC6551Account(payable(tbaAddress)).executeCall(
-            contractAddress,
-            0,
-            data
+        tba = registry.createAccount(
+            implementationAddress,
+            salt,
+            block.chainid,
+            nftContract,
+            tokenId
         );
     }
 
     /**
      * @notice Supplies WETH to the Aave WETH lending pool
-     * @param tbaAddress The TBA of the user
-     * @param amount The amount of tokens to transfer
+     * @param tba The TBA of the user
+     * @param amount The amount of WETH to supply
      */
-    function _supplyToAavePool(address tbaAddress, uint256 amount) internal {
+    function _supplyToAavePool(address tba, uint256 amount) internal {
         // Approve the Aave pool to spend the deposited WETH
-        _executeCall(
-            tbaAddress,
-            address(wethTokenAddress),
+        ERC6551Account(payable(tba)).executeCall(
+            wethAddress,
+            0,
             abi.encodeWithSignature(
                 "approve(address,uint256)",
                 address(aavePool),
@@ -191,14 +176,14 @@ contract YieldManager is AccessControl {
         );
 
         // Supply WETH to Aave pool from TBA
-        _executeCall(
-            tbaAddress,
+        ERC6551Account(payable(tba)).executeCall(
             address(aavePool),
+            0,
             abi.encodeWithSignature(
                 "supply(address,uint256,address,uint16)",
-                wethTokenAddress,
+                wethAddress,
                 amount,
-                tbaAddress,
+                tba,
                 0
             )
         );

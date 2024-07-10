@@ -9,8 +9,8 @@ async function createTBAAndDeposit(
   salt,
   amount
 ) {
-  await yieldManager.depositAndInitializeTBA(nftAddress, tokenId, salt, amount);
-  return await yieldManager.getTBAAddress(nftAddress, tokenId, salt);
+  await yieldManager.deposit(nftAddress, tokenId, salt, amount);
+  return await yieldManager.getTBA(nftAddress, tokenId, salt);
 }
 
 module.exports = {
