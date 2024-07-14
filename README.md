@@ -9,13 +9,13 @@ To get started with the DeFi Yield Manager, follow these steps:
 1. Clone the repository:
 
 ```console
-git clone git@github.com:ummehanizaki/ERC6551-Implementation.git
+git clone git@github.com:ummehanizaki/ERC6551-DeFi-Yield-Manager.git
 ```
 
 2. Navigate to the project directory and install the necessary NPM packages::
 
 ```console
-cd ERC6551-Implementation
+cd ERC6551-DeFi-Yield-Manager
 npm install
 ```
 
